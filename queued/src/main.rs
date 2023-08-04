@@ -32,7 +32,7 @@ use libqueued::Queued;
 use std::backtrace::Backtrace;
 use std::io::stderr;
 use std::io::Write;
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::os::unix::prelude::PermissionsExt;
@@ -58,7 +58,7 @@ struct Cli {
 
   /// Interface for server to listen on. Defaults to 127.0.0.1.
   #[arg(long, default_value = "127.0.0.1")]
-  interface: Ipv4Addr,
+  interface: IpAddr,
 
   /// Port for server to listen on. Defaults to 3333.
   #[arg(long, default_value_t = 3333)]
@@ -115,9 +115,12 @@ async fn main() {
 
   let cli = Cli::parse();
 
-  let queued = Queued::load_and_start(&cli.data_dir, libqueued::QueuedCfg {
-    batch_sync_delay: Duration::from_micros(cli.batch_sync_delay_us),
-  })
+  let queued = Queued::load_and_start(
+    &cli.data_dir,
+    libqueued::QueuedCfg {
+      batch_sync_delay: Duration::from_micros(cli.batch_sync_delay_us),
+    },
+  )
   .await;
 
   let ctx = Arc::new(HttpCtx { queued });
