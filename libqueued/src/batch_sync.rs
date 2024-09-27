@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::block_in_place;
 use tokio::time::timeout_at;
 use tokio::time::Instant;
 
@@ -41,12 +42,14 @@ impl BatchSync {
           };
           signals.push(sig);
         }
-        if next_id_requires_update {
-          partition
-            .insert("next_id", create_u64_le(persisted_next_id))
-            .unwrap();
-        };
-        db.persist(fjall::PersistMode::SyncData).unwrap();
+        block_in_place(|| {
+          if next_id_requires_update {
+            partition
+              .insert("next_id", create_u64_le(persisted_next_id))
+              .unwrap();
+          };
+          db.persist(fjall::PersistMode::SyncData).unwrap();
+        });
         for sig in signals.drain(..) {
           sig.signal(());
         }
