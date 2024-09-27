@@ -2,7 +2,6 @@ use super::result::OpError;
 use super::result::OpResult;
 use crate::ctx::Ctx;
 use crate::db::rocksdb_key;
-use crate::db::rocksdb_write_opts;
 use crate::db::RocksDbKeyPrefix;
 use chrono::Utc;
 use dashmap::DashMap;
@@ -11,7 +10,6 @@ use futures::StreamExt;
 use itertools::Itertools;
 use off64::int::create_i40_le;
 use off64::int::create_u32_le;
-use rocksdb::WriteBatchWithTransaction;
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
@@ -67,30 +65,30 @@ pub(crate) async fn op_poll(ctx: &Ctx, req: OpPollInput) -> OpResult<OpPollOutpu
     .remove_earliest_n(req.count, req.ignore_existing_visibility_timeouts);
   assert!(msgs.len() <= req.count);
 
-  let mut b = WriteBatchWithTransaction::default();
+  let mut b = ctx.db.batch();
   for &(id, old_poll_tag) in msgs.iter() {
-    b.put(
+    b.insert(
+      &ctx.partition,
       rocksdb_key(RocksDbKeyPrefix::MessagePollTag, id),
       create_u32_le(old_poll_tag + 1),
     );
-    b.put(
+    b.insert(
+      &ctx.partition,
       rocksdb_key(RocksDbKeyPrefix::MessageVisibleTimestampSec, id),
       create_i40_le(new_visible_time),
     );
   }
-  let db = ctx.db.clone();
-  spawn_blocking(move || db.write_opt(b, &rocksdb_write_opts()).unwrap())
-    .await
-    .unwrap();
+
+  spawn_blocking(move || b.commit().unwrap()).await.unwrap();
 
   let msg_contents = Arc::new(DashMap::new());
   iter(msgs.iter())
     .for_each_concurrent(None, |&(id, _)| {
-      let db = ctx.db.clone();
+      let partition = ctx.partition.clone();
       let msg_datas = msg_contents.clone();
       async move {
         spawn_blocking(move || {
-          let data = db
+          let data = partition
             .get(rocksdb_key(RocksDbKeyPrefix::MessageData, id))
             .unwrap()
             .unwrap();
@@ -119,7 +117,8 @@ pub(crate) async fn op_poll(ctx: &Ctx, req: OpPollInput) -> OpResult<OpPollOutpu
     messages: msgs
       .into_iter()
       .map(|(id, old_poll_tag)| OpPollOutputMessage {
-        contents: msg_contents.remove(&id).unwrap().1,
+        // TODO: to_vec here doesn't feel great...
+        contents: msg_contents.remove(&id).unwrap().1.to_vec(),
         id,
         poll_tag: old_poll_tag + 1,
       })

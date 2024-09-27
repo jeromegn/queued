@@ -11,6 +11,7 @@ use crate::batch_sync::BatchSync;
 use ctx::Ctx;
 use db::rocksdb_load;
 use db::rocksdb_open;
+use fjall::PartitionCreateOptions;
 use metrics::Metrics;
 use op::delete::op_delete;
 use op::delete::OpDeleteInput;
@@ -61,7 +62,14 @@ impl Queued {
     let ctx = Ctx {
       // We can safely create a strong reference clone to the database, as BatchSync's background thread will stop once the channel sender is dropped, which will then drop the DB.
       batch_sync: BatchSync::start(cfg.batch_sync_delay, db.clone(), data.next_id),
+      partition: db
+        .open_partition(
+          "default",
+          PartitionCreateOptions::default().compression(fjall::CompressionType::None),
+        )
+        .unwrap(),
       db,
+
       messages: Mutex::new(data.messages),
       metrics,
       next_id: AtomicU64::new(data.next_id),

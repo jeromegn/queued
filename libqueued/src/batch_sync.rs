@@ -1,5 +1,5 @@
+use fjall::Keyspace;
 use off64::int::create_u64_le;
-use rocksdb::DB;
 use signal_future::SignalFuture;
 use signal_future::SignalFutureController;
 use std::sync::Arc;
@@ -15,10 +15,11 @@ pub(crate) struct BatchSync {
 }
 
 impl BatchSync {
-  pub fn start(batch_sync_delay: Duration, db: Arc<DB>, mut persisted_next_id: u64) -> Self {
+  pub fn start(batch_sync_delay: Duration, db: Keyspace, mut persisted_next_id: u64) -> Self {
     let (sender, mut receiver) = unbounded_channel::<(u64, SignalFutureController<()>)>();
     spawn(async move {
       let mut signals = Vec::new();
+      let default = db.open_partition("default", Default::default()).unwrap();
       while let Some((nid, sig)) = receiver.recv().await {
         let mut next_id_requires_update = false;
         if nid > persisted_next_id {
@@ -36,9 +37,11 @@ impl BatchSync {
           signals.push(sig);
         }
         if next_id_requires_update {
-          db.put("next_id", create_u64_le(persisted_next_id)).unwrap();
+          default
+            .insert("next_id", create_u64_le(persisted_next_id))
+            .unwrap();
         };
-        db.flush_wal(true).unwrap();
+        db.persist(fjall::PersistMode::SyncAll).unwrap();
         for sig in signals.drain(..) {
           sig.signal(());
         }

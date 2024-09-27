@@ -23,7 +23,7 @@ num-traits = "0.2.15"
 num_cpus = "1.16.0"
 off64 = "0.6.0"
 parking_lot = "0.12.1"
-rocksdb = "0.21.0"
+fjall = { git = "https://github.com/jeromegn/fjall", branch = "ssi-tx", version = "2.0.0", default-features = false, features = ["bloom", "lz4", "ssi_tx"] }
 serde = { version = "1.0.164", features = ["derive"] }
 serde_bytes = "0.11.12"
 signal-future = "0.1.1"

@@ -1,0 +1,3 @@
+data_dir: "./data"
+messages: 10000
+message_size: 1KB

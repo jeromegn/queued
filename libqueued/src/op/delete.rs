@@ -2,9 +2,7 @@ use super::result::OpError;
 use super::result::OpResult;
 use crate::ctx::Ctx;
 use crate::db::rocksdb_key;
-use crate::db::rocksdb_write_opts;
 use crate::db::RocksDbKeyPrefix;
-use rocksdb::WriteBatchWithTransaction;
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
@@ -33,7 +31,7 @@ pub(crate) async fn op_delete(ctx: &Ctx, req: OpDeleteInput) -> OpResult<OpDelet
     return Err(OpError::Suspended);
   };
 
-  let mut b = WriteBatchWithTransaction::default();
+  let mut b = ctx.db.batch();
   {
     let mut msgs = ctx.messages.lock();
     for m in req.messages {
@@ -44,22 +42,26 @@ pub(crate) async fn op_delete(ctx: &Ctx, req: OpDeleteInput) -> OpResult<OpDelet
           .fetch_add(1, Ordering::Relaxed);
         continue;
       };
-      b.delete(rocksdb_key(RocksDbKeyPrefix::MessageData, m.id));
-      b.delete(rocksdb_key(RocksDbKeyPrefix::MessagePollTag, m.id));
-      b.delete(rocksdb_key(
-        RocksDbKeyPrefix::MessageVisibleTimestampSec,
-        m.id,
-      ));
+      b.remove(
+        &ctx.partition,
+        rocksdb_key(RocksDbKeyPrefix::MessageData, m.id),
+      );
+      b.remove(
+        &ctx.partition,
+        rocksdb_key(RocksDbKeyPrefix::MessagePollTag, m.id),
+      );
+      b.remove(
+        &ctx.partition,
+        rocksdb_key(RocksDbKeyPrefix::MessageVisibleTimestampSec, m.id),
+      );
       ctx
         .metrics
         .successful_delete_counter
         .fetch_add(1, Ordering::Relaxed);
     }
   };
-  let db = ctx.db.clone();
-  spawn_blocking(move || db.write_opt(b, &rocksdb_write_opts()).unwrap())
-    .await
-    .unwrap();
+
+  spawn_blocking(move || b.commit().unwrap()).await.unwrap();
   ctx.batch_sync.submit_and_wait(0).await;
 
   Ok(OpDeleteOutput {})

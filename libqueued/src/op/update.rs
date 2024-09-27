@@ -2,12 +2,10 @@ use super::result::OpError;
 use super::result::OpResult;
 use crate::ctx::Ctx;
 use crate::db::rocksdb_key;
-use crate::db::rocksdb_write_opts;
 use crate::db::RocksDbKeyPrefix;
 use chrono::Utc;
 use off64::int::create_i40_le;
 use off64::int::create_u32_le;
-use rocksdb::WriteBatchWithTransaction;
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
@@ -48,18 +46,21 @@ pub(crate) async fn op_update(ctx: &Ctx, req: OpUpdateInput) -> OpResult<OpUpdat
   let new_visible_time = Utc::now().timestamp() + req.visibility_timeout_secs as i64;
   let new_poll_tag = req.poll_tag + 1;
 
-  let db = ctx.db.clone();
+  // let db = ctx.db.clone();
+  let mut b = ctx.db.batch();
+  let partition = ctx.partition.clone();
   spawn_blocking(move || {
-    let mut b = WriteBatchWithTransaction::default();
-    b.put(
+    b.insert(
+      &partition,
       rocksdb_key(RocksDbKeyPrefix::MessagePollTag, req.id),
       create_u32_le(new_poll_tag),
     );
-    b.put(
+    b.insert(
+      &partition,
       rocksdb_key(RocksDbKeyPrefix::MessageVisibleTimestampSec, req.id),
       create_i40_le(new_visible_time),
     );
-    db.write_opt(b, &rocksdb_write_opts()).unwrap();
+    b.commit().unwrap();
   })
   .await
   .unwrap();

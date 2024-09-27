@@ -3,13 +3,15 @@ use crate::messages::Messages;
 use crate::metrics::Metrics;
 use crate::suspend::SuspendState;
 use crate::throttler::Throttler;
+use fjall::{Keyspace, PartitionHandle};
 use parking_lot::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 pub(crate) struct Ctx {
   pub batch_sync: BatchSync,
-  pub db: Arc<rocksdb::DB>,
+  pub db: Keyspace,
+  pub partition: PartitionHandle,
   pub messages: Mutex<Messages>,
   pub metrics: Arc<Metrics>,
   pub next_id: AtomicU64,

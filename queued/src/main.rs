@@ -71,9 +71,12 @@ async fn main() {
       .into_string()
       .expect("data dir entry as UTF-8 string");
     let q = Arc::new(
-      Queued::load_and_start(&d.path(), libqueued::QueuedCfg {
-        batch_sync_delay: cfg.batch_sync_delay,
-      })
+      Queued::load_and_start(
+        &d.path(),
+        libqueued::QueuedCfg {
+          batch_sync_delay: cfg.batch_sync_delay,
+        },
+      )
       .await,
     );
     info!(name, "loaded queue");
@@ -140,11 +143,15 @@ async fn main() {
             mtls = ca.is_some(),
             "HTTPS server started"
           );
-          build_port_server_with_tls(cfg.interface, cfg.port, &TlsCfg {
-            cert: read(cert).expect("read SSL certificate file"),
-            key: read(key).expect("read SSL key file"),
-            ca: ca.map(|ca| read(ca).expect("read SSL CA file")),
-          })
+          build_port_server_with_tls(
+            cfg.interface,
+            cfg.port,
+            &TlsCfg {
+              cert: read(cert).expect("read SSL certificate file"),
+              key: read(key).expect("read SSL key file"),
+              ca: ca.map(|ca| read(ca).expect("read SSL CA file")),
+            },
+          )
           .serve(app.into_make_service())
           .await
           .unwrap();
