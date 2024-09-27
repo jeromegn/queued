@@ -4,6 +4,7 @@ use fjall::BlockCache;
 use fjall::CompressionType;
 use fjall::Keyspace;
 use fjall::PartitionCreateOptions;
+use fjall::PartitionHandle;
 use num_derive::FromPrimitive;
 use off64::int::Off64ReadInt;
 use off64::int::Off64WriteMutInt;
@@ -78,24 +79,17 @@ pub(crate) struct LoadedData {
   pub messages: Messages,
 }
 
-pub(crate) fn rocksdb_load(db: &Keyspace, metrics: Arc<Metrics>) -> LoadedData {
+pub(crate) fn rocksdb_load(partition: &PartitionHandle, metrics: Arc<Metrics>) -> LoadedData {
   let mut messages = Messages::new(metrics);
 
-  let default = db
-    .open_partition(
-      "default",
-      PartitionCreateOptions::default().compression(CompressionType::None),
-    )
-    .unwrap();
-
   // WARNING: We must use next_id instead of simply getting the maximum ID, as that would cause ID reuse if a message is deleted and then a new one is created in quick succession.
-  let mut next_id = default
+  let mut next_id = partition
     .get("next_id")
     .unwrap()
     .map(|raw| raw.read_u64_le_at(0))
     .unwrap_or(0);
 
-  for e in default.prefix(&[RocksDbKeyPrefix::MessageVisibleTimestampSec as u8]) {
+  for e in partition.prefix(&[RocksDbKeyPrefix::MessageVisibleTimestampSec as u8]) {
     let (k, v) = e.unwrap();
     if k[0] != RocksDbKeyPrefix::MessageVisibleTimestampSec as u8 {
       break;
@@ -106,7 +100,7 @@ pub(crate) fn rocksdb_load(db: &Keyspace, metrics: Arc<Metrics>) -> LoadedData {
       next_id = id + 1;
     };
     let visible_time = v.read_i40_le_at(0);
-    let poll_tag = default
+    let poll_tag = partition
       .get(rocksdb_key(RocksDbKeyPrefix::MessagePollTag, id))
       .unwrap()
       .map(|raw| raw.read_u32_le_at(0))

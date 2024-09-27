@@ -1,4 +1,5 @@
 use fjall::Keyspace;
+use fjall::PartitionHandle;
 use off64::int::create_u64_le;
 use signal_future::SignalFuture;
 use signal_future::SignalFutureController;
@@ -15,11 +16,15 @@ pub(crate) struct BatchSync {
 }
 
 impl BatchSync {
-  pub fn start(batch_sync_delay: Duration, db: Keyspace, mut persisted_next_id: u64) -> Self {
+  pub fn start(
+    batch_sync_delay: Duration,
+    db: Keyspace,
+    partition: PartitionHandle,
+    mut persisted_next_id: u64,
+  ) -> Self {
     let (sender, mut receiver) = unbounded_channel::<(u64, SignalFutureController<()>)>();
     spawn(async move {
       let mut signals = Vec::new();
-      let default = db.open_partition("default", Default::default()).unwrap();
       while let Some((nid, sig)) = receiver.recv().await {
         let mut next_id_requires_update = false;
         if nid > persisted_next_id {
@@ -37,11 +42,11 @@ impl BatchSync {
           signals.push(sig);
         }
         if next_id_requires_update {
-          default
+          partition
             .insert("next_id", create_u64_le(persisted_next_id))
             .unwrap();
         };
-        db.persist(fjall::PersistMode::SyncAll).unwrap();
+        db.persist(fjall::PersistMode::SyncData).unwrap();
         for sig in signals.drain(..) {
           sig.signal(());
         }
